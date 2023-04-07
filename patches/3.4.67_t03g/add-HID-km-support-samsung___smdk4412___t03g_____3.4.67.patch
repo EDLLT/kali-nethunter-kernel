@@ -1,6 +1,6 @@
---- a/drivers/usb/gadget/Makefile	(revision 3)
-+++ b/drivers/usb/gadget/Makefile	(working copy)
-@@ -51,7 +51,7 @@
+--- a/drivers/usb/gadget/Makefile
++++ b/drivers/usb/gadget/Makefile
+@@ -51,7 +51,7 @@ g_dbgp-y			:= dbgp.o
  g_nokia-y			:= nokia.o
  g_webcam-y			:= webcam.o
  g_ncm-y				:= ncm.o
@@ -9,11 +9,11 @@
  g_slp-y				:= slp.o
  
  obj-$(CONFIG_USB_ZERO)		+= g_zero.o
---- a/drivers/usb/gadget/android.c	(revision 3)
-+++ b/drivers/usb/gadget/android.c	(working copy)
-@@ -59,6 +59,9 @@
+--- a/drivers/usb/gadget/android.c
++++ b/drivers/usb/gadget/android.c
+@@ -56,6 +56,9 @@
+ #include "f_adb.c"
  #include "f_mtp.c"
- #endif
  #include "f_accessory.c"
 +#include "f_hid.h"
 +#include "f_hid_android_keyboard.c"
@@ -21,7 +21,7 @@
  #define USB_ETH_RNDIS y
  #include "f_rndis.c"
  #include "rndis.c"
-@@ -1150,6 +1153,41 @@
+@@ -1084,6 +1087,41 @@ static struct android_usb_function audio_source_function = {
  	.attributes	= audio_source_function_attributes,
  };
  
@@ -61,9 +61,9 @@
 +};
 +
  static struct android_usb_function *supported_functions[] = {
+ 	&ffs_function,
  	&adb_function,
- 	&acm_function,
-@@ -1167,6 +1205,7 @@
+@@ -1096,6 +1134,7 @@ static struct android_usb_function *supported_functions[] = {
  	&diag_function,
  	&dm_function,
  	&audio_source_function,
@@ -71,24 +71,26 @@
  	NULL
  };
  
-@@ -1316,6 +1355,7 @@
- 	char *name;
+@@ -1269,6 +1308,7 @@ functions_store(struct device *pdev, struct device_attribute *attr,
  	char buf[256], *b;
+ 	char aliases[256], *a;
  	int err;
 +	int hid_enabled;
+ 	int is_ffs;
+ 	int ffs_enabled = 0;
  
- 	mutex_lock(&dev->mutex);
- 
-@@ -1335,4 +1335,6 @@
-			err = android_enable_function(dev, conf, name);
-                        if (err)
-                                pr_err("android_usb: Cannot enable '%s' (%d)",
-                                                                   name, err);
+@@ -1336,6 +1376,8 @@ functions_store(struct device *pdev, struct device_attribute *attr,
+ 			if (err)
+ 				pr_err("android_usb: Cannot enable '%s' (%d)",
+ 								   name, err);
 +			if (!strcmp(name, "hid"))
 +				hid_enabled = 1;
-@@ -1361,6 +1403,9 @@
- #endif
  		}
+ 	}
+ 
+@@ -1345,6 +1387,9 @@ functions_store(struct device *pdev, struct device_attribute *attr,
+ 				  struct android_configuration, list_item);
+ 		free_android_config(dev, conf);
  	}
 +	/* HID driver always enabled, it's the whole point of this kernel patch */
 +	if (hid_enabled)
@@ -96,9 +98,9 @@
  
  	mutex_unlock(&dev->mutex);
  
---- a/drivers/usb/gadget/f_hid.c	(revision 3)
-+++ b/drivers/usb/gadget/f_hid.c	(working copy)
-@@ -27,7 +27,9 @@
+--- a/drivers/usb/gadget/f_hid.c
++++ b/drivers/usb/gadget/f_hid.c
+@@ -18,7 +18,9 @@
  #include <linux/poll.h>
  #include <linux/uaccess.h>
  #include <linux/wait.h>
@@ -108,7 +110,7 @@
  
  static int major, minors;
  static struct class *hidg_class;
-@@ -63,6 +65,43 @@
+@@ -54,6 +56,43 @@ struct f_hidg {
  	struct usb_endpoint_descriptor	*hs_in_ep_desc;
  };
  
@@ -152,7 +154,7 @@
  static inline struct f_hidg *func_to_hidg(struct usb_function *f)
  {
  	return container_of(f, struct f_hidg, func);
-@@ -151,6 +190,11 @@
+@@ -142,6 +181,11 @@ static ssize_t f_hidg_read(struct file *file, char __user *buffer,
  	if (!access_ok(VERIFY_WRITE, buffer, count))
  		return -EFAULT;
  
@@ -164,7 +166,7 @@
  	spin_lock_irqsave(&hidg->spinlock, flags);
  
  #define READ_COND (hidg->set_report_buff != NULL)
-@@ -205,6 +249,11 @@
+@@ -196,6 +240,11 @@ static ssize_t f_hidg_write(struct file *file, const char __user *buffer,
  	if (!access_ok(VERIFY_READ, buffer, count))
  		return -EFAULT;
  
@@ -176,7 +178,7 @@
  	mutex_lock(&hidg->lock);
  
  #define WRITE_COND (!hidg->write_pending)
-@@ -219,6 +268,11 @@
+@@ -210,6 +259,11 @@ static ssize_t f_hidg_write(struct file *file, const char __user *buffer,
  				hidg->write_queue, WRITE_COND))
  			return -ERESTARTSYS;
  
@@ -188,7 +190,7 @@
  		mutex_lock(&hidg->lock);
  	}
  
-@@ -259,7 +313,18 @@
+@@ -250,7 +304,18 @@ static unsigned int f_hidg_poll(struct file *file, poll_table *wait)
  	struct f_hidg	*hidg  = file->private_data;
  	unsigned int	ret = 0;
  
@@ -207,7 +209,7 @@
  	poll_wait(file, &hidg->write_queue, wait);
  
  	if (WRITE_COND)
-@@ -449,7 +514,7 @@
+@@ -440,13 +505,15 @@ const struct file_operations f_hidg_fops = {
  	.llseek		= noop_llseek,
  };
  
@@ -216,7 +218,6 @@
  {
  	struct usb_ep		*ep;
  	struct f_hidg		*hidg = func_to_hidg(f);
-@@ -456,6 +521,8 @@
  	int			status;
  	dev_t			dev;
  
@@ -225,7 +226,7 @@
  	/* allocate instance-specific interface IDs, and patch descriptors */
  	status = usb_interface_id(c, f);
  	if (status < 0)
-@@ -528,6 +595,7 @@
+@@ -519,6 +586,7 @@ static int __init hidg_bind(struct usb_configuration *c, struct usb_function *f)
  		goto fail;
  
  	device_create(hidg_class, NULL, dev, NULL, "%s%d", "hidg", hidg->minor);
@@ -233,7 +234,7 @@
  
  	return 0;
  
-@@ -549,12 +617,21 @@
+@@ -540,12 +608,21 @@ static void hidg_unbind(struct usb_configuration *c, struct usb_function *f)
  {
  	struct f_hidg *hidg = func_to_hidg(f);
  
@@ -256,7 +257,7 @@
  	kfree(hidg->req->buf);
  	usb_ep_free_request(hidg->in_ep, hidg->req);
  
-@@ -590,7 +667,7 @@
+@@ -581,7 +658,7 @@ static struct usb_gadget_strings *ct_func_strings[] = {
  /*-------------------------------------------------------------------------*/
  /*                             usb_configuration                           */
  
@@ -265,7 +266,7 @@
  			    struct hidg_func_descriptor *fdesc, int index)
  {
  	struct f_hidg *hidg;
-@@ -641,7 +718,7 @@
+@@ -632,7 +709,7 @@ int __init hidg_bind_config(struct usb_configuration *c,
  	return status;
  }
  
@@ -274,8 +275,8 @@
  {
  	int status;
  	dev_t dev;
---- a/drivers/usb/gadget/f_hid.h	(revision 0)
-+++ b/drivers/usb/gadget/f_hid.h	(working copy)
+--- /dev/null
++++ b/drivers/usb/gadget/f_hid.h
 @@ -0,0 +1,16 @@
 +#ifndef _GADGET_F_HID_H
 +#define _GADGET_F_HID_H
@@ -293,8 +294,8 @@
 +void ghid_cleanup(void);
 +
 +#endif
---- a/drivers/usb/gadget/f_hid_android_keyboard.c	(revision 0)
-+++ b/drivers/usb/gadget/f_hid_android_keyboard.c	(working copy)
+--- /dev/null
++++ b/drivers/usb/gadget/f_hid_android_keyboard.c
 @@ -0,0 +1,44 @@
 +#include <linux/platform_device.h>
 +#include <linux/usb/g_hid.h>
@@ -340,8 +341,8 @@
 +		0xc0		/* END_COLLECTION                         */
 +	}
 +};
---- a/drivers/usb/gadget/f_hid_android_mouse.c	(revision 0)
-+++ b/drivers/usb/gadget/f_hid_android_mouse.c	(working copy)
+--- /dev/null
++++ b/drivers/usb/gadget/f_hid_android_mouse.c
 @@ -0,0 +1,40 @@
 +#include <linux/platform_device.h>
 +#include <linux/usb/g_hid.h>
