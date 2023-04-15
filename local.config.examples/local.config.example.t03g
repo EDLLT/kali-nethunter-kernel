@@ -11,6 +11,8 @@
 # Toolchains
 ##############################################
 
+EDIT=nano
+
 # Clang
 unset CLANG_ROOT
 unset CLANG_PATH
@@ -42,6 +44,9 @@ KERNEL_IMAGE=$KDIR/arch/arm/boot/$IMAGE_NAME
 
 #Path to compiled DTS
 DTB_IN=$KDIR/arch/arm/boot/dts
+
+# Directory structure on the target device that will contain the modules directory
+MODULE_DIRTREE="/system/"
 
 # Path to the output of the Kernel
 KERNEL_OUT="$KDIR"
