@@ -640,12 +640,12 @@ function make_kernel_modules_only() {
 	if [ "$CC" == "clang" ]; then
 		cc="CC=clang"
 	fi
-	if [ ! "$cfg_done" = true ]; then
-		if ask "Edit the kernel config?" "Y"; then
-			info "Creating custom  config" 
-			make -C $KDIR O="$KERNEL_OUT" $cc $CONFIG $CONFIG_TOOL 
-		fi
-	fi
+	# if [ ! "$cfg_done" = true ]; then
+		# if ask "Edit the kernel config?" "Y"; then
+		# 	info "Creating custom  config" 
+		# 	make -C $KDIR O="$KERNEL_OUT" $cc $CONFIG $CONFIG_TOOL 
+		# fi
+	# fi
 	enable_ccache
 	echo ${CC}
 	echo ${CROSS_COMPILE}
@@ -685,11 +685,15 @@ function make_kernel_modules_only() {
 	rm -f ${MODULES_OUT}/lib/modules/*/source
 	rm -f ${MODULES_OUT}/lib/modules/*/build
 	success "Modules build completed"
-	if ask "Save .config as $CONFIG?"; then
-		cp -f ${confdir}/$CONFIG ${confdir}/$CONFIG.old
-		cp -f ${KERNEL_OUT}/.config ${confdir}/$CONFIG
-		info "Done. Old config backed up as $CONFIG.old"
+	if ask "Push Modules to /sdcard/MODULES?" "Y"; then
+		adb shell rm -r /sdcard/MODULES/*
+		adb push ${MODULES_OUT}/lib/modules /sdcard/MODULES
 	fi
+	# if ask "Save .config as $CONFIG?"; then
+	# 	cp -f ${confdir}/$CONFIG ${confdir}/$CONFIG.old
+	# 	cp -f ${KERNEL_OUT}/.config ${confdir}/$CONFIG
+	# 	info "Done. Old config backed up as $CONFIG.old"
+	# fi
 }
 
 # Generate the NetHunter kernel zip - to be extracted in the devices folder of the nethunter-installer
