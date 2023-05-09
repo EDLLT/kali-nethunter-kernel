@@ -631,6 +631,67 @@ function make_kernel() {
 	fi
 }
 
+# Compile the kerne's modules only
+function make_kernel_modules_only() {
+	local cc
+	local confdir=${KDIR}/arch/$ARCH/configs
+	printf "\n"
+        # CC=clang cannot be exported. Let's compile with clang if "CC" is set to "clang" in the config
+	if [ "$CC" == "clang" ]; then
+		cc="CC=clang"
+	fi
+	if [ ! "$cfg_done" = true ]; then
+		if ask "Edit the kernel config?" "Y"; then
+			info "Creating custom  config" 
+			make -C $KDIR O="$KERNEL_OUT" $cc $CONFIG $CONFIG_TOOL 
+		fi
+	fi
+	enable_ccache
+	echo ${CC}
+	echo ${CROSS_COMPILE}
+	echo ${CROSS_COMPILE_ARM32}
+	info "~~~~~~~~~~~~~~~~~~"
+	info " Building kernel"
+	info "~~~~~~~~~~~~~~~~~~"
+	copy_version
+	grep "CONFIG_MODULES=y" ${KERNEL_OUT}/.config >/dev/null && MODULES=true
+	## Some kernel sources do not compile into a separate $OUT directory so we set $OUT = $ KDIR
+	## This works with clean and config targets but not for a build, we'll catch this here
+	if [ "$KDIR" == "$KERNEL_OUT" ]; then
+		if [ "$CC" == "ccache clang" ]; then
+			time make -C $KDIR CC="ccache clang"  -j "$THREADS" ${MAKE_ARGS} modules
+			if [ "$MODULES" = true ]; then
+		    		time make -C $KDIR CC="ccache clang" -j "$THREADS" INSTALL_MOD_PATH=$MODULES_OUT modules_install
+			fi
+		else
+			time make -C $KDIR $cc -j "$THREADS" ${MAKE_ARGS} modules
+			if [ "$MODULES" = true ]; then
+		    		time make -C $KDIR $cc -j "$THREADS" INSTALL_MOD_PATH=$MODULES_OUT modules_install
+			fi
+		fi
+	else
+		if [ "$CC" == "ccache clang" ]; then
+			time make -C $KDIR O="$KERNEL_OUT" CC="ccache clang" -j "$THREADS" ${MAKE_ARGS} modules
+			if [ "$MODULES" = true ]; then
+		    		time make -C $KDIR O="$KERNEL_OUT" CC="ccache clang" -j "$THREADS" INSTALL_MOD_PATH=$MODULES_OUT modules_install
+			fi
+		else
+			time make -C $KDIR O="$KERNEL_OUT" $cc -j "$THREADS" ${MAKE_ARGS} modules
+			if [ "$MODULES" = true ]; then
+		    		time make -C $KDIR O="$KERNEL_OUT" $cc -j "$THREADS" INSTALL_MOD_PATH=$MODULES_OUT modules_install
+			fi
+		fi
+	fi
+	rm -f ${MODULES_OUT}/lib/modules/*/source
+	rm -f ${MODULES_OUT}/lib/modules/*/build
+	success "Modules build completed"
+	if ask "Save .config as $CONFIG?"; then
+		cp -f ${confdir}/$CONFIG ${confdir}/$CONFIG.old
+		cp -f ${KERNEL_OUT}/.config ${confdir}/$CONFIG
+		info "Done. Old config backed up as $CONFIG.old"
+	fi
+}
+
 # Generate the NetHunter kernel zip - to be extracted in the devices folder of the nethunter-installer
 function make_nhkernel_zip() {
 	printf "\n"
@@ -801,6 +862,7 @@ show_menu() {
 	printf "\t1. Edit default kernel config\n"
 	printf "\t2. Configure & compile kernel from scratch\n"
 	printf "\t3. Configure & recompile kernel from previous run\n"
+	printf "\tM. Compile Modules from previous run\n"
 	printf "\t4. Apply NetHunter kernel patches\n"
 	printf "\t5. Create NetHunter zip\n"
 	printf "\t6. Create Anykernel zip\n"
@@ -819,7 +881,7 @@ show_menu() {
 # Read menu choices
 read_choice(){
 	local choice
-	read -p "Enter selection [N/T/1-8/S/H/E] " choice
+	read -p "Enter selection [N/T/1-8/M/S/H/E] " choice
 	case ${choice,,} in
 		n)
 		   clear
@@ -844,10 +906,14 @@ read_choice(){
 		   clear
 		   if [ "$THREADS" -gt "10" ]; then
 			## limit threads to simplify debugging 
-			THREADS=10
+			THREADS=16
 		   fi
 		   make_kernel
 		   ;;
+		m)
+			clear
+			make_kernel_modules_only
+			;;
 		4)
 		   clear
 		   patch_kernel
